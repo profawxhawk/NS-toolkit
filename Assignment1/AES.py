@@ -8,7 +8,7 @@ class AES:
     state_vector=[]
     blocks_input=[]
     blocks_output=[]
-    key_list=[]
+    sub_keys=[]
     master_key=0
     Mix_col_matrix=[2,1,1,3]
     # Rijndael S-box
@@ -48,30 +48,96 @@ class AES:
             [0xa0, 0xe0, 0x3b, 0x4d, 0xae, 0x2a, 0xf5, 0xb0, 0xc8, 0xeb, 0xbb, 0x3c, 0x83, 0x53, 0x99, 0x61],
             [0x17, 0x2b, 0x04, 0x7e, 0xba, 0x77, 0xd6, 0x26, 0xe1, 0x69, 0x14, 0x63, 0x55, 0x21, 0x0c, 0x7d]]
     
+    # Rcons for neccesary rounds
+    Rij_rcon=[]
+    
+    
     # Initialise key_size, the entire message array ( each element is of size 16 bytes ) and number of rounds
-
     def __init__(self,key_size,rounds,blocks):
         self.key_size=key_size
         self.rounds=rounds
         self.blocks_input=blocks
+        temp=0x01
+        for i in range(self.rounds):
+            self.Rij_rcon.append(self.ith(temp))
+            temp=self.galois_mult(temp,0x02)
+            
+
+
+
+    # initialise master key
+    def master_key_init(self,key):
+        self.master_key=key
+
+    # hex to int
+    def hti(self,input):
+        try:
+            return int(input,16)
+        except:
+            return input
+
+    # int to hex
+    def ith(self,input):
+        try:
+            return format(input,'02x')
+        except:
+            return input
+
+    # sub-key generation function
+    def key_gen(self):
+        self.master_key=self.convert_to_state(self.master_key)    # convert master key to 4*4 array 
+        size=self.key_size//32
+        temp=self.master_key
+        prev=self.column(size-1,temp)                             # get the last column of master key
+        self.sub_keys.append(self.master_key) 
+        for i in range(self.rounds):
+            sub_key=[]
+            for j in range(size):                                 # generate 4 words for each round
+                curr_column_in_prev=self.column(j,temp)           # get the word corresponding to the current index from the last round 
+                output=[]
+                if j==0:
+                    prev=prev[1:]+prev[:1]                        # rotate the prev column
+                    for x,y in enumerate(prev):
+                        prev[x]=self.ith(self.Rij_Sbox[self.hti(y[0])][self.hti(y[1])])   # using sbox for substitution on prev column 
+                    prev[0]=self.ith(self.hti(prev[0])^self.hti(self.Rij_rcon[i]))        # and then xoring with rcon of current round
+                for x,y in zip(prev,curr_column_in_prev):
+                    output.append(self.ith(self.hti(x)^self.hti(y)))                      # xor prev and the word corresponding to the current index from the last round 
+                prev=output
+                sub_key.append(output)                                                    # append generated word to the sub_key vector
+            temp=[list(i) for i in zip(*sub_key)]    
+            self.sub_keys.append(temp)                                     # transpose the obtained sub_key vector and append it to global sub_keys vector
 
     # Convert 1D 16 byte array to 2D 4*4 array
     def convert_to_state(self,input):
         state=[[],[],[],[]]
         count=0
         for i in input:
-            state[count%4].append(format(i, '02x'))   #convert to hex
+            state[count%4].append(self.ith(i))   #convert to hex
             count+=1
         return state
+    
+    # Convert vector to hex string
+    def vector_to_bytes(self,vector):
+        output=''
+        for i in range(4):
+            for j in range(4):
+                output+=self.state_vector[j][i]
+        return bytes.fromhex(output)
+
+
     # Convert hex to (row,col) pair
     def get_index_from_hex(self,i,j):
         row=(self.state_vector[i][j][0])
         col=(self.state_vector[i][j][1])
-        return int(row,16),int(col,16)
+        return self.hti(row),self.hti(col)
 
-    # XOR sub-key ( indexed in the key_list array by the index parameter) with current state_vector
+    # XOR sub-key ( indexed in the sub_keys array by the index parameter) with current state_vector
     def round_key_addition(self,index):
-        pass
+        for i in range(4):
+            for j in range(4):
+                self.state_vector[i][j]=self.ith(self.hti(self.state_vector[i][j])^self.hti(self.sub_keys[index][i][j]))
+        
+        
     
     # Use S-Box to do substitutions on each individual byte of the state_vector
     def substitution_bytes(self):
@@ -102,51 +168,58 @@ class AES:
                 a=a^(0x11B)
         return p
 
-    def column(self,i):  # ref
-        return [row[i] for row in self.state_vector]
+    # get the column of a vector by its column index
+    def column(self,i,vector):  # ref
+        return [row[i] for row in vector]
     
 
     # Multiply with mix_column matrix for transposing each individual column
     def mix_columns(self):
         for i in range(4):
-            temp=self.column(i)
+            temp=self.column(i,self.state_vector)
             temp1=self.galois_mult(self.Mix_col_matrix[0],temp[0])^self.galois_mult(self.Mix_col_matrix[3],temp[1])^temp[2]^temp[3]
             temp2=self.galois_mult(self.Mix_col_matrix[0],temp[1])^self.galois_mult(self.Mix_col_matrix[3],temp[2])^temp[0]^temp[3]
             temp3=self.galois_mult(self.Mix_col_matrix[0],temp[2])^self.galois_mult(self.Mix_col_matrix[3],temp[3])^temp[0]^temp[1]
             temp4=self.galois_mult(self.Mix_col_matrix[0],temp[3])^self.galois_mult(self.Mix_col_matrix[3],temp[0])^temp[2]^temp[1]
-            self.state_vector[0][i]=format(temp1,'02x')
-            self.state_vector[1][i]=format(temp2,'02x')
-            self.state_vector[2][i]=format(temp3,'02x')
-            self.state_vector[3][i]=format(temp4,'02x')
+            self.state_vector[0][i]=self.ith(temp1)
+            self.state_vector[1][i]=self.ith(temp2)
+            self.state_vector[2][i]=self.ith(temp3)
+            self.state_vector[3][i]=self.ith(temp4)
 
     # Main encryption function for each element of the message array
     def encrypt_block(self,index):
 
         if(len(self.blocks_input[index])!=16):
-            print("block size s not 128 bites. exiting")
+            print("block size is not 128 bites. exiting")
             exit(0)
 
         self.state_vector=self.convert_to_state(self.blocks_input[index])
-        print(self.state_vector)
-        # self.round_key_addition(0)
-        self.substitution_bytes()
-        print(self.state_vector)
-        self.shift_rows()
-        print(self.state_vector)
-        self.mix_columns()
-        print(self.state_vector)
-
-        # for i in range(1,self.rounds+1):
-        #     self.substitution_bytes()
-        #     self.shift_rows()
-        #     if i!=(self.rounds):
-        #         self.mix_columns()
-        #     self.round_key_addition(i)
+        self.round_key_addition(0)
+        for i in range(1,self.rounds+1):
+            self.substitution_bytes()
+            self.shift_rows()
+            if i!=(self.rounds):
+                self.mix_columns()
+            self.round_key_addition(i)
+        
             
+    #xor 2 hex strings
+    def xor_hex(self,a,b):
+        for i,j in zip(a,b):
+            i=self.ith(i^j)
 
     # CBC encryption for entire message
     def encrypt(self):
+        iv=b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+        prev=iv
+        output=[]
         for i in range(len(self.blocks_input)):
+            self.xor_hex(self.blocks_input[i],prev)
             self.encrypt_block(i)
+            prev=self.state_vector
+            output.append(self.vector_to_bytes(prev))
+        print("Encryption done returning to main. See encrypt.txt for encrypted text.")
+        return  b''.join(output)
+
 
 

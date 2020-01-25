@@ -33,10 +33,15 @@ def pad_block_PKCS5(blocks):
 if __name__ == '__main__':
     filename=input('Enter full path of file')
     f=open(filename,'r')
+    f1 = open('encrypt.txt', 'wb')
     blocks=get_blocks(f)
     calc_size(blocks)
     pad_block_PKCS5(blocks)
     Aes=AES(128,10,blocks)
-    Aes.encrypt()
+    Aes.master_key_init(list(b'\x2B\x7E\x15\x16\x28\xAE\xD2\xA6\xAB\xF7\x15\x88\x09\xCF\x4F\x3C'))
+    Aes.key_gen()
+    f1.write(Aes.encrypt())
+    f.close()
+    f1.close()
     
     
