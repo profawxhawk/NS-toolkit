@@ -338,6 +338,8 @@ class AES:
         self.round_key_addition(0)
         #self.arr_of_state_dec.append(self.state_vector)
         
+
+
         # print(self.arr_of_state_dec)
 
     #xor 2 hex strings
@@ -413,16 +415,30 @@ class AES:
         #print(output)
         #assert encryption rounds
         f=True
-        print(self.arr_of_state)
-        # print("--------------------")
-        print(self.arr_of_state_dec)
-        n = len(self.arr_of_state)
-        for i in range(0,len(self.arr_of_state)-3,4):
+        # print(self.arr_of_state)
+        # # print("--------------------")
+        # print(self.arr_of_state_dec)
+        # print(self.arr_of_state)
+        n = len(self.arr_of_state_dec)
+        print(n)
+        indx=40-4
+        v1=40
+        prev=0
+        for i in range(0,len(self.arr_of_state),4):
+            if i-prev==40:
+                prev=i
+                v1=v1+40
+                indx=v1-4
             for j in range(0,4):
+                print(i+j,indx+j)
                 lis1 = self.arr_of_state[i+j]
-                lis2 = self.arr_of_state_dec[n-4-i+j]
-                print(lis1,lis2)
+                lis2 = self.arr_of_state_dec[indx+j]
+                print(lis1,lis2)                
                 assert lis1==lis2,"Error, encryption not equal to decryption"
+            indx = indx - 4
+        print('-------------------')
+        self.arr_of_state = []
+        self.arr_of_state_dec=[]
                 
 
         
