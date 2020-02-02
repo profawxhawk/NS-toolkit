@@ -12,7 +12,9 @@ class AES:
     master_key=0
     Mix_col_matrix=[2,1,1,3]
     Mix_col_matrix_inv=[14,11,13,9]
-    val_prin=0
+    arr_of_state = []
+    arr_of_state_dec=[]
+    d_sub_keys=[]
     # Rijndael S-box
     Rij_Sbox =  [
             [0x63, 0x7c, 0x77, 0x7b, 0xf2, 0x6b, 0x6f, 0xc5, 0x30, 0x01, 0x67, 0x2b, 0xfe, 0xd7, 0xab, 0x76], 
@@ -95,6 +97,7 @@ class AES:
         temp=self.master_key
         prev=self.column(size-1,temp)                             # get the last column of master key
         self.sub_keys.append(self.master_key) 
+        self.d_sub_keys.append(self.master_key)
         for i in range(self.rounds):
             sub_key=[]
             for j in range(size):                                 # generate 4 words for each round
@@ -109,9 +112,16 @@ class AES:
                     output.append(self.ith(self.hti(x)^self.hti(y)))                      # xor prev and the word corresponding to the current index from the last round 
                 prev=output
                 sub_key.append(output)                                                    # append generated word to the sub_key vector
-            temp=[list(i) for i in zip(*sub_key)]    
-            self.sub_keys.append(temp)                                     # transpose the obtained sub_key vector and append it to global sub_keys vector
-        
+            temp=[list(i) for i in zip(*sub_key)]
+            temp2=[list(i) for i in zip(*sub_key)] 
+            self.sub_keys.append(temp) 
+            self.d_sub_keys.append(temp2)                                    # transpose the obtained sub_key vector and append it to global sub_keys vector
+            
+        # print(self.sub_keys)
+        for i in range(1,self.rounds):
+            self.inv_mix_columns_key(i)
+        # print(self.sub_keys)
+
         
 
 
@@ -145,7 +155,10 @@ class AES:
             for j in range(4):
                 self.state_vector[i][j]=self.ith(self.hti(self.state_vector[i][j])^self.hti(self.sub_keys[index][i][j]))
         
-        
+    def d_round_key_addition(self,index):
+        for i in range(4):
+            for j in range(4):
+                self.state_vector[i][j]=self.ith(self.hti(self.state_vector[i][j])^self.hti(self.d_sub_keys[index][i][j]))
     
     # Use S-Box to do substitutions on each individual byte of the state_vector
     def substitution_bytes(self):
@@ -159,7 +172,7 @@ class AES:
         for i in range(4):
             for j in range(4):
                 row,col=self.get_index_from_hex(i,j)
-                self.state_vector[i][j]=self.Rij_inv_Sbox[row][col]
+                self.state_vector[i][j]=self.ith(self.Rij_inv_Sbox[row][col])
 
     
     # Shift the rows in the state_vector as in algorithm
@@ -207,6 +220,9 @@ class AES:
             self.state_vector[2][i]=self.ith(temp3)
             self.state_vector[3][i]=self.ith(temp4)
 
+
+    
+
     #Multiply with Mix_col_matrix_inv
     def inv_mix_columns(self):
         for i in range(4):
@@ -221,21 +237,56 @@ class AES:
             self.state_vector[3][i]=self.ith(temp4)
             
 
+    def inv_mix_columns_key(self,indx):
+        for i in range(4):
+            temp = self.column(i,self.d_sub_keys[indx])           
+            temp1 = self.galois_mult(self.Mix_col_matrix_inv[0],self.hti(temp[0]))^self.galois_mult(self.Mix_col_matrix_inv[1],self.hti(temp[1]))^self.galois_mult(self.Mix_col_matrix_inv[2],self.hti(temp[2]))^self.galois_mult(self.Mix_col_matrix_inv[3],self.hti(temp[3]))
+            temp2 = self.galois_mult(self.Mix_col_matrix_inv[3],self.hti(temp[0]))^self.galois_mult(self.Mix_col_matrix_inv[0],self.hti(temp[1]))^self.galois_mult(self.Mix_col_matrix_inv[1],self.hti(temp[2]))^self.galois_mult(self.Mix_col_matrix_inv[2],self.hti(temp[3]))
+            temp3 = self.galois_mult(self.Mix_col_matrix_inv[2],self.hti(temp[0]))^self.galois_mult(self.Mix_col_matrix_inv[3],self.hti(temp[1]))^self.galois_mult(self.Mix_col_matrix_inv[0],self.hti(temp[2]))^self.galois_mult(self.Mix_col_matrix_inv[1],self.hti(temp[3]))
+            temp4 = self.galois_mult(self.Mix_col_matrix_inv[1],self.hti(temp[0]))^self.galois_mult(self.Mix_col_matrix_inv[2],self.hti(temp[1]))^self.galois_mult(self.Mix_col_matrix_inv[3],self.hti(temp[2]))^self.galois_mult(self.Mix_col_matrix_inv[0],self.hti(temp[3]))
+            self.d_sub_keys[indx][0][i]=self.ith(temp1)
+            self.d_sub_keys[indx][1][i]=self.ith(temp2)
+            self.d_sub_keys[indx][2][i]=self.ith(temp3)
+            self.d_sub_keys[indx][3][i]=self.ith(temp4)
+
+
     # Main encryption function for each element of the message array
     def encrypt_block(self,index):
-
         if(len(self.blocks_input[index])!=16):
             print("block size is not 128 bites. exiting")
             exit(0)
 
         self.state_vector=self.convert_to_state(self.blocks_input[index])
         self.round_key_addition(0)
+        #print(self.state_vector)
+        for i in range(4):
+            self.arr_of_state.append([])
+        for i in range(4):
+            for j in range(4):
+                self.arr_of_state[len(self.arr_of_state) - 4 + i].append(self.state_vector[i][j])
+        #print(self.arr_of_state)
+        #print("-------------------------------------")
+        #print(self.state_vector)
         for i in range(1,self.rounds+1):
             self.substitution_bytes()
             self.shift_rows()
             if i!=(self.rounds):
                 self.mix_columns()
             self.round_key_addition(i)
+            #print(self.state_vector)
+            if i==self.rounds:
+                break
+            for j in range(4):
+                self.arr_of_state.append([])
+            for k in range(4):
+                for j in range(4):
+                    self.arr_of_state[len(self.arr_of_state) - 4 + k].append(self.state_vector[k][j])
+            #print(self.arr_of_state)
+            #print("-------------------------------------")
+            #print(self.state_vector)
+        # print(self.arr_of_state)
+        #print("----------------------------------------")
+        
         
 
     def decrypt_block(self,index):
@@ -244,18 +295,50 @@ class AES:
             print("block size is not 128 bites. exiting")
             exit(0)
         self.state_vector=self.convert_to_state(self.blocks_input[index])
+        #print(self.state_vector)
+        # for i in range(4):
+        #     self.arr_of_state_dec.append([])
+        # for i in range(4):
+        #     for j in range(4):
+        #         self.arr_of_state_dec[len(self.arr_of_state_dec) - 4 + i].append(self.state_vector[i][j])
+        #print(self.arr_of_state_dec)
         self.round_key_addition(self.rounds)
+        #print("---------------------------")
+        #self.arr_of_state_dec.append(self.state_vector)
         for i in range(self.rounds-1,0,-1):
             #print(i)
             self.inv_shift_rows()
             self.inv_sub_bytes()
-            self.round_key_addition(i)
+            #print(self.state_vector)
+            
+            for k in range(4):
+                self.arr_of_state_dec.append([])
+            for k in range(4):
+                for j in range(4):
+                    self.arr_of_state_dec[len(self.arr_of_state_dec) - 4 + k].append(self.state_vector[k][j])
+            #print(self.arr_of_state_dec)
+            #print("----------------------")
+            self.round_key_addition(i) 
             self.inv_mix_columns()
-        
+            
+                       
+            #self.arr_of_state_dec.append(self.state_vector)
+            
         self.inv_shift_rows()
         self.inv_sub_bytes()
+        #print(self.state_vector)
+        for k in range(4):
+            self.arr_of_state_dec.append([])
+        for k in range(4):
+            for j in range(4):
+                self.arr_of_state_dec[len(self.arr_of_state_dec) - 4 + k].append(self.state_vector[k][j])
+        #print(self.arr_of_state_dec)
+        #print("----------------------")
+        #       
         self.round_key_addition(0)
-
+        #self.arr_of_state_dec.append(self.state_vector)
+        
+        # print(self.arr_of_state_dec)
 
     #xor 2 hex strings
     def xor_hex(self,a,b):
@@ -301,11 +384,11 @@ class AES:
             #print(self.blocks_input[i])
             output.append(self.vector_to_bytes(self.xor_hex(prev,self.conver_to_byte())))
             prev=self.blocks_input[i]
-            print(output[len(output)-1])
+            #print(output[len(output)-1])
         #print(len(b''.join(output)))
 
         last = list(output[len(output)-1])
-        print(last)
+        #print(last)
         x = len(last)
         pad=(last[x-1])
         if(pad<=15):
@@ -313,18 +396,50 @@ class AES:
                 if(last[i]!=last[i-1] and pad!=1):
                     pad=0
                     break
+        else:
+            pad=0
         last = last[0:len(last)-pad]
         #print(last)
         for i in range(len(last)):
             last[i] = bytes([last[i]])
         temp=b''.join(last)
         #print(last)
+        #print(temp)
         #
         #temp = str.encode(temp)
         output = output[0:len(output)-1]
         
         output.append(temp)
         #print(output)
+        #assert encryption rounds
+        f=True
+        print(self.arr_of_state)
+        # print("--------------------")
+        print(self.arr_of_state_dec)
+        n = len(self.arr_of_state)
+        for i in range(0,len(self.arr_of_state)-3,4):
+            for j in range(0,4):
+                lis1 = self.arr_of_state[i+j]
+                lis2 = self.arr_of_state_dec[n-4-i+j]
+                print(lis1,lis2)
+                assert lis1==lis2,"Error, encryption not equal to decryption"
+                
+
+        
+
+
+        # for i in range(0,len(self.arr_of_state)):
+        #     for j in range(0,len(self.arr_of_state[i])):                
+        #         for k in range(0,len(self.arr_of_state[i][j])):
+        #             print(self.hti(self.arr_of_state[i][j][k]),self.hti(self.arr_of_state_dec[len(self.arr_of_state)-i-1][j][k]))
+        #             if self.arr_of_state[i][j][k]!=self.arr_of_state_dec[len(self.arr_of_state)-i-1][j][k]:
+        #                 f=False
+        #                 break
+        # if f==True:
+        #     print("All rounds Matched")
+        # else:
+        #     print("Crap")
+        print(output)
         return b''.join(output)
 
 
