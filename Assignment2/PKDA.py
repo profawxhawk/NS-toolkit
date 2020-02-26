@@ -21,16 +21,38 @@ for port in portlist.keys():
 
 def encrypt(value,key):
     key = RSA.importKey(key.decode('utf8'))
-    print(value) 
+    #print(value)
+    print(len(value)) 
     temp=int.from_bytes(value, byteorder='big')
-    temp%=key.n 
-    e=key.e
+    
+    #temp = 1234567
+    if(temp<key.n):
+        print("Good!!")
+    print(temp)
+    cipher = pow(temp,key.d,key.n)
+    #print(cipher)
+    byte_len = int(math.ceil(cipher.bit_length() / 8))
+    print((byte_len))
+
+    #decrypt
+    #with open('./Pubkey_DA/PKDApub.public', 'rb') as priv2:
+    #    key2 = priv2.read()
+    #key2 = RSA.importKey(key2.decode('utf8'))  
+    #message = pow(cipher,key2.e,key2.n)
+    #print(message)
+    #print(key.n)
+    #print(key2.n)
+
+
+
+
+
     # while(e>0):
     #     if(e&1)
-    # byte_len = int(math.ceil(temp.bit_length() / 8))
+    byte_len = int(math.ceil(cipher.bit_length() / 8))
     # x_bytes = temp.to_bytes(byte_len, byteorder='big')
     # print(x_bytes)
-    return value
+    return cipher.to_bytes(byte_len,byteorder='big')
 
 def serve(conn):
     while True:
@@ -44,6 +66,7 @@ def serve(conn):
             break
 
         if data['receiver'] in portlist.keys():
+            print(data['receiver'])
             DApriv=''
             clientpub=''
             with open('./Pubkey_DA/PKDApri.private', 'rb') as privatefile:
