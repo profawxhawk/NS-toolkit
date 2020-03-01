@@ -3,11 +3,13 @@ import json
 from Crypto.PublicKey import RSA
 import math
 import threading
-
+import time
 portlist={'client1':8080,'client2':8081}
 portlist_clients={'client1':8082,'client2':8083}
 public_keys_list={}
 client_socket_list={}
+lock = threading.Lock()
+messy=False
 print("Enter your name")
 name=input()
 port=portlist[name]
@@ -25,6 +27,17 @@ client1 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 client1.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 client1.bind(ds)
 client1.listen(1)
+nonce_dict={}
+
+def gen_nonce(length):
+    seq = string.ascii_uppercase+string.digits
+    #print(seq)
+    randu_str = ''
+    for i in range(length):
+        randu_str = randu_str + secrets.choice(seq)
+    #print(os.NAMESPACE_DNS)
+    return int(str(os.uuid5(os.NAMESPACE_DNS,randu_str).int)[:length])
+
 
 print("Client listening on port "+str(port))
 def decrypt(value,key2,priv):
@@ -62,6 +75,7 @@ def ask_key(client,receiver):
     return (0,None)
 
 def send_init_to_client(clientid,pub_key):
+    print("Sending initial request to "+clientid)
     conn=client_socket_list[clientid]
     request={'id':name,'nonce':latest_nonce}
     request=encrypt(json.dumps(request).encode('utf8'),pub_key.encode('utf8'),False)
@@ -83,7 +97,6 @@ def change_nonce():
 def receive_on_new_client(clientsocket,addr,conn):
     session_client=''
     while True:
-        print("Ready to receive on "+str(clientsocket))
         msg = clientsocket.recv(4096)
         key=''
         with open('./Pubkey_clients/'+name+'pri.private', 'rb') as priv2:
@@ -100,21 +113,60 @@ def receive_on_new_client(clientsocket,addr,conn):
                 pub_key=data['public_key']
                 session_client=json.loads(msg)['id']
                 request=encrypt(json.dumps(request).encode('utf8'),pub_key.encode('utf8'),False)
-                print(request)
-                conn.send(request)
+                receiver=client_socket_list[session_client]
+                receiver.send(request)
 
             elif 'nonce_receiver' in json.loads(msg) and json.loads(msg)['nonce_receiver']==latest_nonce:
                 if 'nonce_sender' in json.loads(msg):
                     session_client=json.loads(msg)['name']
                     pub_key=public_keys_list[session_client]
-                    conn.send(encrypt(json.dumps({'nonce_receiver':json.loads(msg)['nonce_sender']}).encode('utf8'),pub_key.encode('utf8'),False))
+                    receiver=client_socket_list[session_client]
+                    receiver.send(encrypt(json.dumps({'nonce_receiver':json.loads(msg)['nonce_sender']}).encode('utf8'),pub_key.encode('utf8'),False))
                 else:
-                    print("Done")
-                    exit()
-                    conn.send(encrypt(json.dumps({'nonce_receiver':json.loads(msg)['nonce_sender']}).encode('utf8'),pub_key.encode('utf8'),False))
+                    receiver=client_socket_list[session_client]
+                    pub_key=public_keys_list[session_client]
+                    receiver.send(encrypt(json.dumps({'message':"Ready to receive"}).encode('utf8'),pub_key.encode('utf8'),False))
+            
+            elif 'message' in json.loads(msg):
+                if json.loads(msg)['message']=="Ready to receive":
+                    print("In message thread")
+                    print("Secure connection to "+session_client+" established")
+                    print("Type message to send")
+                    lock.acquire(blocking=True, timeout=-1)
+                    message=input()
+                    lock.release()
+                    receiver=client_socket_list[session_client]
+                    pub_key=public_keys_list[session_client]
+                    receiver.send(encrypt(json.dumps({'message':message}).encode('utf8'),pub_key.encode('utf8'),False))
+                    print("Message sent to "+session_client+" waiting for reply")
+                else:
+                    print("In message thread")
+                    print("Message received from "+session_client)
+                    print("Message is " + json.loads(msg)['message'])
+                    if(json.loads(msg)['message']=="good bye"):
+                        print("Message session over press enter to go to main thread. You can chat with another client if you havnt initiated a chat before")
+                        continue
+                    print("In message thread")
+                    print("Type message to send. If program switches to main thread please enter message again")
+                    messy=True
+                    lock.acquire(blocking=True, timeout=-1)
+                    message=input()
+                    lock.release()
+                    receiver=client_socket_list[session_client]
+                    pub_key=public_keys_list[session_client]
+                    receiver.send(encrypt(json.dumps({'message':message}).encode('utf8'),pub_key.encode('utf8'),False))
+                    if(message=="good bye"):
+                        print("breaking connection... press enter to go to main thread. You can chat with another client if you havnt initiated a chat before")
+                        continue
+                    else:
+                        print("Message sent to "+session_client+" waiting for reply")
+                    
+            else:
+                print("Message not in right format")
+                    
                     
         except:
-            print('id not found of sender...')
+            print('Some error ... ')
             print("message received from "+str(addr))
     clientsocket.close()
 
@@ -139,6 +191,10 @@ def listen_to_connections():
             client_socket_list[port]=client2
             print("Server listening on port "+str(portlist_clients[port]))
 
+def generate_nonces():
+    for port in portlist_clients.keys():
+        if port!=name:
+            nonce_dict[port]=gen_nonce(8)
 while True:
     print("Make sure all clients are up and running, otherwise program will crash")
     print("Please start the PKDA server now")
@@ -146,12 +202,18 @@ while True:
     ans=input()
     c, addr=client.accept()
     print('Connected to PKDA server')
+    print('Make sure to follow order mentioned in doc to establish proper connections between clients')
     res='a'
     while(res!='c'):
+        print("In main thread")
         print("a) Listen to connections")
         print("b) accept connections")
         print("c) All connections established")
+        lock.acquire(blocking=True, timeout=-1)
+        if messy:
+            print("This is the message thread.There is a small glitch please enter message again.")
         res=input()
+        lock.release()
         if res=='a':
             listen_to_connections()
         if res=='b':
@@ -159,21 +221,32 @@ while True:
         elif res=='c':
             print('All conections up, moving to next stage')
     while(res=='c'):
-        print("choose client (enter name)")
+        # generate_nonces()
+        print("In main thread")
+        print("choose client (enter name) for getting public key")
         for i in portlist.keys():
             if i!=name:
                 print(i)
+        lock.acquire(blocking=True, timeout=-1)
         recieve=input()
-        if recieve not in portlist.keys() or recieve==name:
-            print("wrong input enter again")
-            continue
-        x,data = ask_key(c,recieve)
-        public_keys_list[recieve]=data['public_key']
-        if x==0:
-            continue
-        print("Initiating connection with "+recieve+".....")
-        print()
-        client_to=send_init_to_client(recieve,data['public_key'])
+        lock.release()
+        if recieve not in public_keys_list.keys():
+            if recieve not in portlist.keys() or recieve==name:
+                print("wrong input enter again")
+                continue
+            x,data = ask_key(c,recieve)
+            public_keys_list[recieve]=data['public_key']
+            if x==0:
+                continue
+            print("Initiating connection with "+recieve+".....")
+            print()
+            client_to=send_init_to_client(recieve,data['public_key'])
+        else:
+            print("Initiating connection with "+recieve+".....")
+            print()
+            client_to=send_init_to_client(recieve,public_keys_list[recieve])
+        print("Wait for 100 seconds to communicate with another client")
+        time.sleep(100)
     
 
 
