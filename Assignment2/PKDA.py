@@ -5,68 +5,43 @@ import threading
 import binascii
 import math
 from Crypto.PublicKey import RSA
-
+import concurrent.futures
 servers = [] 
 portlist={'client1':8080,'client2':8081}
 print("PKDA switching on")
 
 for port in portlist.keys():
-    print("Binding ports to "+port)
-    ds = ("0.0.0.0", portlist[port])
-    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    server.bind(ds)
-    server.listen(1)
-    servers.append(server)
+    client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    client.connect(('0.0.0.0',portlist[port]))
+    print("Server listening on port "+str(portlist[port]))
+    servers.append(client)
+    # ds = ("0.0.0.0", portlist[port])
+    # server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    # server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    # server.bind(ds)
+    # server.listen(1)
+    # servers.append(server)
 
 def encrypt(value,key):
     key = RSA.importKey(key.decode('utf8'))
-    #print(value)
-    print(len(value)) 
     temp=int.from_bytes(value, byteorder='big')
-    
-    #temp = 1234567
-    if(temp<key.n):
-        print("Good!!")
-    print(temp)
     cipher = pow(temp,key.d,key.n)
-    #print(cipher)
     byte_len = int(math.ceil(cipher.bit_length() / 8))
-    print((byte_len))
-
-    #decrypt
-    #with open('./Pubkey_DA/PKDApub.public', 'rb') as priv2:
-    #    key2 = priv2.read()
-    #key2 = RSA.importKey(key2.decode('utf8'))  
-    #message = pow(cipher,key2.e,key2.n)
-    #print(message)
-    #print(key.n)
-    #print(key2.n)
-
-
-
-
-
-    # while(e>0):
-    #     if(e&1)
-    byte_len = int(math.ceil(cipher.bit_length() / 8))
-    # x_bytes = temp.to_bytes(byte_len, byteorder='big')
-    # print(x_bytes)
     return cipher.to_bytes(byte_len,byteorder='big')
 
 def serve(conn):
     while True:
         data = conn.recv(1024).decode('utf-8')
         if not data:
-            break
+            continue
         data=json.loads(data)
 
         if ('receiver' or 'time') not in data.keys():
             conn.send("0".encode('utf8'))
-            break
+            
 
         if data['receiver'] in portlist.keys():
-            print(data['receiver'])
+            print(str(data['receiver'])+" public key requested")
             DApriv=''
             clientpub=''
             with open('./Pubkey_DA/PKDApri.private', 'rb') as privatefile:
@@ -82,9 +57,19 @@ def serve(conn):
 
     conn.close()
 
-while True:
-    print("waiting for client")
-    readable,_,_ = select.select(servers, [], [])
-    ready_server = readable[0]
-    connection, address = ready_server.accept()
-    t1=threading.Thread(target=serve(connection))
+def Server_init(i):
+    try:
+        serve(i)
+    except:
+        print('error with item')
+
+# while True:
+print("waiting for client")
+executor = concurrent.futures.ProcessPoolExecutor(len(servers))
+futures = [executor.submit(Server_init, i) for i in servers]
+concurrent.futures.wait(futures)
+    # readable,_,_ = select.select(servers, [], [])
+    # ready_server = readable[0]
+    # print(ready_server)
+    # connection, address = ready_server.accept()
+    # t1=threading.Thread(target=serve(connection))
