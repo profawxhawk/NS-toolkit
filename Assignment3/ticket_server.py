@@ -17,7 +17,8 @@ ticket_server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 ticket_server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 ticket_server.bind(ds)
 ticket_server.listen(1)
-
+def dec(val):
+    return val
 def find_server(message):
     return 'server1'
 def receive_on_new_client(conn,addr):
@@ -36,16 +37,20 @@ def receive_on_new_client(conn,addr):
             conn.send(tic)
         
         if 'license' in msg and 'ticket' in msg:
-            msg['ticket']=json.loads(msg['ticket'])
+            msg['ticket']=json.loads(dec(msg['ticket']))
             if (msg['ticket']['issue']+msg['ticket']['lifetime'])>datetime.now().timestamp():
                 server=find_server(msg['license'])
                 ticket2=ticket(msg['ticket']['ID'],datetime.now().timestamp(),10000,server)
+                with open('./police_keys/'+msg['ticket']['ID']+'pub.public', 'rb') as priv2:
+                    pub_key = priv2.read()
                 tic=encrypt(pub_key,ticket2.toJSON().encode('utf-8'))
                 print("Ticket 2 sent")
                 conn.send(tic)
+            else:
+                conn.send(b'expired')
 
 
-    pass
+    
 
 def connection_from_all_clients():
     t=len(police_list.keys())

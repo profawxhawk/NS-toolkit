@@ -15,7 +15,7 @@ from datetime import datetime
 import chardet
 import binascii
 main_server_list={'server1':8080,'server2':8081}
-police_list={'police1':8001,'police2':8002}
+police_list={'police1':8001}
 ticket_server=8000
 socket_list={}
 
@@ -84,91 +84,6 @@ def ask_key(client,receiver):
         print("Replay Attack")
     return (0,None)
 
-def send_init_to_client(clientid,pub_key):
-    print("Sending initial request to "+clientid)
-    conn=client_socket_list[clientid]
-    request={'id':name,'nonce':nonce_dict[clientid]}
-    request=encrypt(json.dumps(request).encode('utf8'),pub_key.encode('utf8'),False)
-    conn.send(request)
-    
-def receive_on_new_client(clientsocket,addr,conn):
-    session_client=''
-    global nonce_dict
-    while True:
-        msg = clientsocket.recv(4096)
-        key=''
-        with open('./Pubkey_clients/'+name+'pri.private', 'rb') as priv2:
-            key = priv2.read()
-        msg=decrypt(msg,key,True)
-        try:
-            if 'id' in json.loads(msg):
-                print()
-                print("Message initiaition request from "+str(json.loads(msg)['id']))
-                print("Acquiruing public key of "+str(json.loads(msg)['id']))
-                x,data = ask_key(conn,json.loads(msg)['id'])
-                public_keys_list[json.loads(msg)['id']]=data['public_key']
-                request={'nonce_sender':nonce_dict[json.loads(msg)['id']],'nonce_receiver':json.loads(msg)['nonce'],'name':name}
-                pub_key=data['public_key']
-                session_client=json.loads(msg)['id']
-                request=encrypt(json.dumps(request).encode('utf8'),pub_key.encode('utf8'),False)
-                receiver=client_socket_list[session_client]
-                receiver.send(request)
-
-            elif 'nonce_receiver' in json.loads(msg) :
-                if 'nonce_sender' in json.loads(msg) and json.loads(msg)['nonce_receiver']==nonce_dict[json.loads(msg)['name']]:
-                    session_client=json.loads(msg)['name']
-                    pub_key=public_keys_list[session_client]
-                    receiver=client_socket_list[session_client]
-                    receiver.send(encrypt(json.dumps({'nonce_receiver':json.loads(msg)['nonce_sender']}).encode('utf8'),pub_key.encode('utf8'),False))
-                elif json.loads(msg)['nonce_receiver']==nonce_dict[session_client]:
-                    receiver=client_socket_list[session_client]
-                    pub_key=public_keys_list[session_client]
-                    receiver.send(encrypt(json.dumps({'message':"Ready to receive"}).encode('utf8'),pub_key.encode('utf8'),False))
-            
-            elif 'message' in json.loads(msg):
-                if json.loads(msg)['message']=="Ready to receive":
-                    print("In message thread")
-                    print("Secure connection to "+session_client+" established")
-                    print("Type message to send")
-                    lock.acquire(blocking=True, timeout=-1)
-                    message=input()
-                    lock.release()
-                    receiver=client_socket_list[session_client]
-                    pub_key=public_keys_list[session_client]
-                    receiver.send(encrypt(json.dumps({'message':message}).encode('utf8'),pub_key.encode('utf8'),False))
-                    print("Message sent to "+session_client+" waiting for reply")
-                else:
-                    print("In message thread")
-                    print("Message received from "+session_client)
-                    print("Message is " + json.loads(msg)['message'])
-                    if(json.loads(msg)['message']=="good bye"):
-                        print("Message session over press enter to go to main thread. You can chat with another client if you havnt initiated a chat before")
-                        continue
-                    print("In message thread")
-                    print("Type message to send. If program switches to main thread please enter message again")
-                    messy=True
-                    lock.acquire(blocking=True, timeout=-1)
-                    message=input()
-                    lock.release()
-                    receiver=client_socket_list[session_client]
-                    pub_key=public_keys_list[session_client]
-                    receiver.send(encrypt(json.dumps({'message':message}).encode('utf8'),pub_key.encode('utf8'),False))
-                    if(message=="good bye"):
-                        print("breaking connection... press enter to go to main thread. You can chat with another client if you havnt initiated a chat before")
-                        continue
-                    else:
-                        print("Message sent to "+session_client+" waiting for reply")
-                    
-            else:
-                print("Message not in right format")
-                    
-                    
-        except:
-            print('Some error ... ')
-            print("message received from "+str(addr))
-    clientsocket.close()
-
-
 def listen_to_ticket_server():
     client2 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     client2.connect(('127.0.0.1',8000))
@@ -180,6 +95,25 @@ def listen_to_all_servers():
         client2 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         client2.connect(('127.0.0.1',main_server_list[i]))
         socket_list[i]=client2
+        print("Connected to "+str(i))
+
+
+def contact_main_server(ticket2,server_name,license):
+    conn=socket_list[server_name]
+    with open('./police_keys/'+name+'.private', 'rb') as priv2:
+        priv_key = priv2.read()
+    with open('./main_server_keys/main_'+server_name+'pub.public', 'rb') as priv2:
+        pub_key = priv2.read()
+    request={'ticket':ticket2.toJSON(),'license': license}
+    request=encrypt(pub_key,json.dumps(request).encode('utf8'))
+    conn.send(request)
+    msg = conn.recv(4096)
+    if msg.decode('utf-8')=='expired':
+        print("Ticket 2 expired exiting")
+        exit()
+    print(json.loads(decrypt(priv_key,msg).decode('utf-8')))
+    
+
 
 def acquire_ticket1():
 
@@ -210,8 +144,10 @@ def acquire_ticket2(license,ticket1):
     request=encrypt(pub_key,json.dumps(request).encode('utf8'))
     conn.send(request)
     msg = conn.recv(4096)
+    if msg.decode('utf-8')=='expired':
+        print("Ticket 1 expired exiting")
+        exit()
     tickety=decrypt(priv_key,msg).decode('utf-8')
-    print(tickety)
     tickety=json.loads(tickety)
     tickety1=ticket(tickety['ID'],tickety['issue'],tickety['lifetime'],tickety['main_server'])
     return tickety1
@@ -224,28 +160,23 @@ while True:
     print("Enter license number")
     license=input()
     listen_to_ticket_server()
-    # listen_to_all_servers()
     print('Connected to ticket server')
 
     if ticket1 is None:
         ticket1=acquire_ticket1()
 
-    if (ticket1 is not None) and (ticket1.issue+ticket1.lifetime)<datetime.now().timestamp():
-        print(ticket1.issue,ticket1.lifetime,datetime.now().timestamp())
-        print("Previous ticket1 expired acquiring new ticket")
-        ticket1=acquire_ticket1()
 
     print('Ticket 1 acquired')
 
     if ticket1 is not None and ticket2 is None:
         ticket2=acquire_ticket2(license,ticket1)
 
-    if  ticket1 is not None and (ticket2 is not None and ticket2.issue+ticket2.lifetime)<datetime.now().timestamp():
-        print("Previous ticket2 expired acquiring new ticket")
-        ticket2=acquire_ticket2(license,ticket1)
-
 
     print('Ticket 2 acquired')
+
+
+    listen_to_all_servers()
+    contact_main_server(ticket2,ticket2.main_server,license)
 
 
 
