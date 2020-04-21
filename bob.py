@@ -4,6 +4,10 @@ import math
 import pickle
 import hmac
 import hashlib
+from Crypto.PublicKey import RSA
+from Crypto.Cipher import PKCS1_OAEP
+import ast
+
 
 recv_s=socket.socket()
 send_s = socket.socket()
@@ -20,6 +24,19 @@ send_s.listen(5)
 alice,addr = send_s.accept()
 alice.send(b'Im bob')
 #---------Encryption starts here------------
+#receive hmac secret from alice
+hmac_secret_dict = pickle.loads(recv_s.recv(4096))
+#use bob private key
+key1 = ''
+with open('./priv_key.txt','rb') as priv:
+    key1 = priv.read()
+priv_key = RSA.importKey(key1)
+encrypted = hmac_secret_dict['secret']
+decryptor = PKCS1_OAEP.new(priv_key)
+#decrypt encrypted hmac secret
+decrypted = decryptor.decrypt(ast.literal_eval(str(encrypted)))
+hmac_secret = decrypted
+
 p = 797
 alpha=2
 z = random.randint(2,p-1)
@@ -28,7 +45,7 @@ print(beta)
 #send public key {p,alpha,beta}
 m = {"p":p,"alpha":alpha,"beta":beta}
 #create hashmac object
-hmac_obj = hmac.new(b'1@#4%^&qwc(',pickle.dumps(m),hashlib.sha512)
+hmac_obj = hmac.new(hmac_secret,pickle.dumps(m),hashlib.sha512)
 m['hmac'] = hmac_obj.hexdigest()
 final_str=""
 alice.send(pickle.dumps(m))

@@ -4,6 +4,10 @@ import random
 import time
 import hashlib
 import hmac
+from Crypto.PublicKey import RSA
+from Crypto.Cipher import PKCS1_OAEP
+import ast
+import math
 
 send_s = socket.socket()
 recv_s = socket.socket()
@@ -23,12 +27,23 @@ x = str(recv_s.recv(1024))
 print(x)
 print("bob to alice established")
 #-----------Encryption--------------
+hmac_secret = b'1@eedfbd'
+key2=''
+with open('./pub_key.txt') as pub:
+    key2 = pub.read()
+#get Bob's Public Key
+pub_key = RSA.importKey(key2)
+encryptor = PKCS1_OAEP.new(pub_key)
+encrypted =  encryptor.encrypt(hmac_secret)
+encrypted_secret_dict = {'secret' : encrypted}
+#send encrypted hmac secret to bob
+bob.send(pickle.dumps(encrypted_secret_dict))
 # receive {p,alpha(b),beta(g^b)} from bob
 pubkey = pickle.loads(recv_s.recv(4096))
 #-----------verify hmac----------------------
 received_hmac = pubkey['hmac']
 del pubkey['hmac']
-hmac_obj1 = hmac.new(b'1@#4%^&qwc(',pickle.dumps(pubkey),hashlib.sha512)
+hmac_obj1 = hmac.new(hmac_secret,pickle.dumps(pubkey),hashlib.sha512)
 if received_hmac==hmac_obj1.hexdigest():
     print("Hmac verified")
 #---------------Use public key--------------------
