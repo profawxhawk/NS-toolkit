@@ -3,6 +3,8 @@ import pickle
 import datetime
 import hmac
 import hashlib
+from classes import decrypt1,encrypt1
+import json
 
 send_s = socket.socket()
 recv_s = socket.socket()
@@ -22,15 +24,23 @@ print(x)
 print("done")
 #--------communication starts here-------------
 res = {'a':datetime.datetime(2000,4,20),'b':datetime.datetime(1999,2,12),'bnj':datetime.datetime(1970,1,1)}
+with open('./keys/server.private', 'rb') as priv2:
+    priv_keys = priv2.read()
 
+with open('./keys/client.public', 'rb') as pub2:
+    pub_keyc = pub2.read()
 #decrypt using server priv key followed by client pubkey
 hmac_secret_dict = pickle.loads(recv_s.recv(4096))
+temp=decrypt1(priv_keys,hmac_secret_dict)
+hmac_secret_dict=decrypt1(pub_keyc,temp)
 hmac_secret = hmac_secret_dict['sec']
 
 #receive query
 #decrypt here, using priv key of server followed by client pubkey
 query_dict = pickle.loads(recv_s.recv(4096))
-print(query_dict)
+temp=decrypt1(priv_keys,query_dict)
+temp=decrypt1(pub_keyc,temp)
+print(temp)
 
 #create hmac obj and verify hmac
 received_hmac = query_dict['hmac']
@@ -53,4 +63,6 @@ reply_dict['hmac'] = hmac_obj.hexdigest()
 
 #send reply_dict
 #encrypt using serverpriv , followed by client pubkey
-client.send(pickle.dumps(reply_dict))
+temp=encrypt1(priv_keys,reply_dict)
+temp=encrypt1(pub_keyc,temp)
+client.send(pickle.dumps(temp))

@@ -4,7 +4,8 @@ import datetime
 import random
 import hmac
 import hashlib
-
+import json
+from classes import decrypt1,encrypt1
 
 send_s = socket.socket()
 recv_s = socket.socket()
@@ -35,9 +36,20 @@ my_nonce = random.randint(2,100)
 my_time_stamp = datetime.datetime.now()
 hmac_secret = b'12nsdn3@%'
 #send hmac secret,encrypt first using client privkey then server pubkey
+with open('./keys/client.private', 'rb') as priv2:
+    priv_keyc = priv2.read()
+
+with open('./keys/server.public', 'rb') as pub2:
+    pub_keys = pub2.read()
+
+
 #------encrypt---------------
 temp_dict = {'sec' : hmac_secret}
-serv.send(pickle.dumps(temp_dict))
+
+temp=encrypt1(priv_keyc,temp_dict)
+temp=encrypt1(pub_keys,temp)
+
+serv.send(pickle.dumps(temp))
 #-----encrypt---------------
 
 #construct query
@@ -49,13 +61,17 @@ query_dict['hmac'] = hmac_obj1.hexdigest()
 #send query
 #encypt first using client privkey then server pubkey
 #-------encrypt--------
-serv.send(pickle.dumps(query_dict))
+temp=encrypt1(priv_keyc,query_dict)
+temp=encrypt1(pub_keys,temp)
+serv.send(pickle.dumps(temp))
 #-------encrpyt--------
 
 #receive reply_dict
 #decrypt first using client privkey then server pubkey
 reply_dict = pickle.loads(recv_s.recv(4096))
-print(reply_dict)
+temp=decrypt1(priv_keyc,query_dict)
+temp=decrypt1(pub_keys,temp)
+print(temp)
 #verify hmac
 received_hmac = reply_dict['hmac']
 del reply_dict['hmac']
