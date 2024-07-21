@@ -1,1 +1,1 @@
-Repo for Network Security Assignments
+Repo for Network Security projects
